@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { addProductToCart } from "@/lib/cart";
 import { fetchWithAuth } from "@/lib/auth/client";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -18,6 +19,13 @@ export default function GlassModal({ isOpen, onClose, product }: GlassModalProps
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [cartMessage, setCartMessage] = useState("");
   const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const backdropTransition = { duration: 0.18, ease: "easeOut" };
+  const panelTransition = {
+    type: "spring",
+    damping: 26,
+    stiffness: 360,
+    mass: 0.8,
+  };
 
   const toggleSection = (section: string) => {
     setExpandedSection(expandedSection === section ? null : section);
@@ -51,22 +59,22 @@ export default function GlassModal({ isOpen, onClose, product }: GlassModalProps
     setCartMessage("Added to cart.");
   }
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 pointer-events-none sm:p-6 lg:p-12"
+      transition={backdropTransition}
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-3 pointer-events-none backdrop-blur-[2px] sm:p-6 lg:p-12"
     >
       <motion.div
-        initial={{ opacity: 0, scale: 0.98, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.98, y: 10 }}
-        transition={{ type: "spring", damping: 30, stiffness: 200 }}
-        className="relative flex h-full max-h-[94vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg bg-[#0a0a0a]/85 pointer-events-auto glass-panel md:flex-row"
+        initial={{ opacity: 0, scale: 0.94, y: 18, filter: "blur(8px)" }}
+        animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
+        exit={{ opacity: 0, scale: 0.96, y: 12, filter: "blur(4px)" }}
+        transition={panelTransition}
+        className="relative flex h-full max-h-[94vh] w-full max-w-7xl origin-center flex-col overflow-hidden rounded-lg bg-[#0a0a0a]/85 pointer-events-auto glass-panel will-change-transform md:flex-row"
       >
         {/* Glowing Background gradient within modal */}
         <div className="absolute inset-0 z-0 bg-gradient-to-br from-white/[0.03] via-transparent to-black pointer-events-none" />
@@ -178,6 +186,7 @@ export default function GlassModal({ isOpen, onClose, product }: GlassModalProps
           </div>
         </div>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body
   );
 }
