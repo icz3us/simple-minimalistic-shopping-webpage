@@ -3,9 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 
-export default function BackgroundEffects() {
+type BackgroundEffectsProps = {
+  pausedOnMobile?: boolean;
+};
+
+export default function BackgroundEffects({ pausedOnMobile = false }: BackgroundEffectsProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const shouldPause = pausedOnMobile && isMobile;
 
   useEffect(() => {
     // Delay showing the video to match the intro typing animation gracefully
@@ -17,12 +23,28 @@ export default function BackgroundEffects() {
   }, []);
 
   useEffect(() => {
+    const mobileQuery = window.matchMedia("(max-width: 767px)");
+    const syncMobileState = () => setIsMobile(mobileQuery.matches);
+
+    syncMobileState();
+    mobileQuery.addEventListener("change", syncMobileState);
+    return () => mobileQuery.removeEventListener("change", syncMobileState);
+  }, []);
+
+  useEffect(() => {
     if (!isLoaded) return;
     
     const video = videoRef.current;
     if (!video) return;
 
     let animationFrameId: number;
+
+    if (shouldPause) {
+      video.pause();
+      return;
+    }
+
+    video.play().catch(console.error);
 
     const updateOpacity = () => {
       if (video) {
@@ -50,6 +72,8 @@ export default function BackgroundEffects() {
     };
 
     const handleEnded = () => {
+      if (shouldPause) return;
+
       video.style.opacity = "0";
       setTimeout(() => {
         if (video) {
@@ -70,7 +94,7 @@ export default function BackgroundEffects() {
       video.removeEventListener("ended", handleEnded);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [isLoaded]);
+  }, [isLoaded, shouldPause]);
 
   return (
     <div className="absolute inset-0 z-0 overflow-hidden bg-black pointer-events-none">

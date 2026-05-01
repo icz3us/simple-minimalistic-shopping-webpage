@@ -11,6 +11,7 @@ import Navbar from "@/components/Navbar";
 export default function Home() {
   const [typedText, setTypedText] = useState("");
   const [introState, setIntroState] = useState<"typing" | "sliding" | "done">("typing");
+  const [isInspectingProduct, setIsInspectingProduct] = useState(false);
   const fullText = "By Linkedin Park";
 
   useEffect(() => {
@@ -86,13 +87,13 @@ export default function Home() {
         transition={{ duration: 2, delay: 0.5, ease: "easeOut" }}
         className="absolute inset-0 z-10 flex flex-col"
       >
-        <BackgroundEffects />
+        <BackgroundEffects pausedOnMobile={isInspectingProduct} />
 
         <Navbar absolute={true} />
 
         {/* Main Content */}
         <div className="relative z-10 w-full h-full">
-          <ProductShowcase />
+          <ProductShowcase onInspectChange={setIsInspectingProduct} />
         </div>
 
         {/* Footer / Corner Info */}

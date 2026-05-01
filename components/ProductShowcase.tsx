@@ -6,10 +6,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import GlassModal from "./GlassModal";
 import type { Product } from "@/lib/supabase/types";
 
-export default function ProductShowcase() {
+type ProductShowcaseProps = {
+  onInspectChange?: (isInspecting: boolean) => void;
+};
+
+export default function ProductShowcase({ onInspectChange }: ProductShowcaseProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const activeProduct = products[0] ?? null;
+  const pauseMobileMotion = isModalOpen && isMobile;
 
   useEffect(() => {
     fetch("/api/products")
@@ -18,23 +24,35 @@ export default function ProductShowcase() {
       .catch(() => setProducts([]));
   }, []);
 
+  useEffect(() => {
+    const mobileQuery = window.matchMedia("(max-width: 767px)");
+    const syncMobileState = () => setIsMobile(mobileQuery.matches);
+
+    syncMobileState();
+    mobileQuery.addEventListener("change", syncMobileState);
+    return () => mobileQuery.removeEventListener("change", syncMobileState);
+  }, []);
+
+  function openInspect() {
+    setIsModalOpen(true);
+    onInspectChange?.(true);
+  }
+
+  function closeInspect() {
+    setIsModalOpen(false);
+    onInspectChange?.(false);
+  }
+
   return (
     <div className="relative flex min-h-screen w-full flex-col items-center justify-center px-4 pt-24 pb-20 sm:px-6">
       {/* Centered Product Element */}
       <div 
         className="relative z-10 cursor-pointer group"
-        onClick={() => setIsModalOpen(true)}
+        onClick={openInspect}
       >
         <motion.div
-          animate={{
-            y: [-15, 15, -15],
-            rotateY: [0, 180, 360],
-          }}
-          transition={{
-            duration: 10,
-            repeat: Infinity,
-            ease: "linear",
-          }}
+          animate={pauseMobileMotion ? { y: 0, rotateY: 0 } : { y: [-15, 15, -15], rotateY: [0, 180, 360] }}
+          transition={pauseMobileMotion ? { duration: 0 } : { duration: 10, repeat: Infinity, ease: "linear" }}
           className="relative h-56 w-56 sm:h-72 sm:w-72 md:h-96 md:w-96"
         >
           {/* Main Product Placeholder (A glowing TechBits Module) */}
@@ -54,8 +72,8 @@ export default function ProductShowcase() {
                  />
                ) : (
                  <motion.div
-                   animate={{ scale: [1, 1.1, 1] }}
-                   transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                   animate={pauseMobileMotion ? { scale: 1 } : { scale: [1, 1.1, 1] }}
+                   transition={pauseMobileMotion ? { duration: 0 } : { duration: 4, repeat: Infinity, ease: "easeInOut" }}
                    className="w-16 h-16 rounded-full bg-white/80 blur-md"
                  />
                )}
@@ -87,7 +105,7 @@ export default function ProductShowcase() {
         {isModalOpen && (
           <GlassModal 
             isOpen={isModalOpen} 
-            onClose={() => setIsModalOpen(false)} 
+            onClose={closeInspect} 
             product={activeProduct}
           />
         )}
