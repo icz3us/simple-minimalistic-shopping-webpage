@@ -67,8 +67,8 @@ export default function ProductShowcase() {
           </div>
         </motion.div>
         {activeProduct && (
-          <div className="absolute -bottom-10 left-1/2 w-[min(86vw,420px)] -translate-x-1/2 text-center pointer-events-none sm:-bottom-8">
-            <p className="text-xs uppercase tracking-[0.22em] text-white/60 sm:text-sm sm:tracking-[0.26em]">{activeProduct.name}</p>
+          <div className="absolute -bottom-12 left-1/2 w-[min(92vw,620px)] -translate-x-1/2 text-center pointer-events-none sm:-bottom-10">
+            <p className="text-lg uppercase tracking-[0.16em] text-white/75 sm:text-2xl sm:tracking-[0.18em] md:text-3xl">{activeProduct.name}</p>
             <p className="mt-1 text-xs text-white/35">PHP {Number(activeProduct.price).toFixed(2)} / Stock {activeProduct.stock}</p>
           </div>
         )}
