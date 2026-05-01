@@ -14,7 +14,7 @@ import type { UserRole } from "@/lib/supabase/types";
 
 type ModalState =
   | { type: "success"; orderId: string; total: number }
-  | { type: "payment"; checkoutUrl: string; intentId: string; orderId: string; total: number }
+  | { type: "payment"; checkoutUrl: string; qrImageUrl: string; intentId: string; orderId: string; total: number }
   | { type: "error"; message: string }
   | null;
 
@@ -120,6 +120,7 @@ export default function CheckoutPage() {
       setModal({
         type: "payment",
         checkoutUrl: data.checkoutUrl,
+        qrImageUrl: data.qrImageUrl,
         intentId: data.intentId,
         orderId: data.order.id,
         total: Number(data.order.total_amount),
@@ -130,6 +131,38 @@ export default function CheckoutPage() {
       setPlacing(false);
     }
   }
+
+  // 3-second Auto-Polling for payment success
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+
+    async function checkStatus(intentId: string) {
+      try {
+        const response = await fetchWithAuth(`/api/checkout/payment/${intentId}`);
+        const data = await response.json();
+        
+        if (response.ok && data.status === "Paid") {
+          setCartItems([]);
+          window.dispatchEvent(new Event(cartChangedEvent));
+          setModal(prev => prev?.type === "payment" ? {
+            type: "success",
+            orderId: prev.orderId,
+            total: prev.total,
+          } : prev);
+        }
+      } catch (e) {
+        console.error("Polling error", e);
+      }
+    }
+
+    if (modal?.type === "payment") {
+      intervalId = setInterval(() => {
+        checkStatus(modal.intentId);
+      }, 3000);
+    }
+
+    return () => clearInterval(intervalId);
+  }, [modal]);
 
   async function handleIHavePaid(intentId: string) {
     if (polling) return;
@@ -403,18 +436,31 @@ export default function CheckoutPage() {
                 <div className="relative z-10">
                   <h3 className="text-xl font-light text-white">Complete Payment</h3>
                   <p className="mt-2 text-sm leading-6 text-white/60">
-                    Scan the QR code to pay using any QRPh supported app (GCash, Maya, etc).
+                    Scan the QR code below using any QRPh supported app (GCash, Maya, etc).
                   </p>
                   
-                  <div className="mt-6 mb-6">
-                    <a 
-                      href={modal.checkoutUrl} 
-                      target="_blank" 
-                      rel="noreferrer"
-                      className="inline-flex h-12 items-center justify-center rounded-md bg-white px-6 text-sm font-medium text-black transition hover:bg-white/90"
-                    >
-                      Open Payment Page
-                    </a>
+                  {/* QR Image Display */}
+                  <div className="mt-6 mb-6 flex justify-center">
+                    {modal.qrImageUrl ? (
+                      <div className="overflow-hidden rounded-lg border-2 border-white/20 bg-white p-2">
+                        <img 
+                          src={modal.qrImageUrl} 
+                          alt="QRPh Code" 
+                          className="h-48 w-48 object-contain"
+                        />
+                      </div>
+                    ) : modal.checkoutUrl ? (
+                      <a 
+                        href={modal.checkoutUrl} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="inline-flex h-12 items-center justify-center rounded-md bg-white px-6 text-sm font-medium text-black transition hover:bg-white/90"
+                      >
+                        Open Payment Page
+                      </a>
+                    ) : (
+                      <p className="text-sm text-amber-200/50">Generating QR code...</p>
+                    )}
                   </div>
 
                   <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] p-3">
@@ -430,13 +476,9 @@ export default function CheckoutPage() {
                   </div>
 
                   <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                    <button
-                      onClick={() => handleIHavePaid(modal.intentId)}
-                      disabled={polling}
-                      className="flex h-11 items-center justify-center bg-sky-500/20 text-xs uppercase tracking-[0.18em] text-sky-100 hover:bg-sky-500/30 disabled:opacity-50"
-                    >
-                      {polling ? "Checking..." : "I Have Paid"}
-                    </button>
+                    <div className="flex h-11 items-center justify-center gap-2 bg-sky-500/10 border border-sky-500/20 text-[10px] sm:text-xs uppercase tracking-[0.18em] text-sky-300">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Auto-checking...
+                    </div>
                     <button
                       onClick={handleCancelPayment}
                       className="flex h-11 items-center justify-center bg-white/10 text-xs uppercase tracking-[0.18em] text-white/75 hover:bg-white/15"

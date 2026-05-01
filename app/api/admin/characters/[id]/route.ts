@@ -37,9 +37,6 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     await verifyAdmin(request);
     const { id } = await params;
     const supabase = getSupabaseAdmin();
-    const { error: qrError } = await supabase.from("qr_codes").delete().eq("character_id", id);
-
-    if (qrError) return jsonError(qrError.message, 400);
 
     const { error } = await supabase.from("techbits_characters").delete().eq("id", id);
 

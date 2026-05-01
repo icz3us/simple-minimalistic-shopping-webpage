@@ -101,11 +101,15 @@ export async function createPayMongoIntentWithQR(
   // For QRPh, next_action usually contains a redirect URL or a direct display URL
   const checkoutUrl =
     nextAction?.redirect?.url || nextAction?.url || "";
+  
+  // Or if it's a consume_qr type, it has an image_url
+  const qrImageUrl = nextAction?.code?.image_url || "";
 
   return {
     intentId,
     methodId,
     checkoutUrl,
+    qrImageUrl,
   };
 }
 

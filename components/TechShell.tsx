@@ -3,6 +3,8 @@
 import Link from "next/link";
 import BackgroundEffects from "@/components/BackgroundEffects";
 
+import Navbar from "@/components/Navbar";
+
 export default function TechShell({
   children,
   title,
@@ -16,14 +18,7 @@ export default function TechShell({
     <main className="relative min-h-screen w-full bg-black text-white overflow-x-hidden">
       <BackgroundEffects />
       <div className="relative z-10 min-h-screen bg-black/45">
-        <nav className="flex flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-10 sm:py-6">
-          <Link href="/" className="text-xs font-light uppercase tracking-[0.24em] text-white/90 sm:text-sm sm:tracking-[0.3em]">
-            TECHBITS COLLECTION
-          </Link>
-          <div className="flex items-center gap-5 text-[11px] font-light uppercase tracking-widest text-white/50 sm:text-xs">
-            <Link href="/" className="hover:text-white">Back to Home</Link>
-          </div>
-        </nav>
+        <Navbar />
 
         <section className="mx-auto w-full max-w-7xl px-4 pb-10 pt-4 sm:px-6 sm:pb-14 sm:pt-6 lg:px-10">
           <div className="mb-6 border-b border-white/10 pb-5 sm:mb-8 sm:pb-6">

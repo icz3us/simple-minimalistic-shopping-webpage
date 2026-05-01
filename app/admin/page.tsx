@@ -4,12 +4,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { Boxes, Download, LogOut, QrCodeIcon, RefreshCw, Save, ShoppingBag, Sparkles, Trash2, Users } from "lucide-react";
+import { Boxes, Download, LogOut, QrCodeIcon, RefreshCw, Save, ShoppingBag, Sparkles, Trash2, Users, X } from "lucide-react";
 import ClassificationBadge from "@/components/ClassificationBadge";
+import jsPDF from "jspdf";
+import QRCode from "qrcode";
 import TechShell from "@/components/TechShell";
 import { fetchWithAuth } from "@/lib/auth/client";
 import { supabaseBrowser } from "@/lib/supabase/client";
-import type { Classification, Product, Profile, QrCode, TechBitsCharacter, UserRole } from "@/lib/supabase/types";
+import type { Classification, Product, Profile, ProductUnit, TechBitsCharacter, UserRole } from "@/lib/supabase/types";
 import { classifications } from "@/lib/supabase/types";
 
 type FormState = {
@@ -29,12 +31,14 @@ type FormState = {
 const blankCharacter: FormState = { name: "", description: "", image_url: "", classification: "Common", quantity: "1", price: "0" };
 const blankProduct: FormState = { name: "", description: "", details: "", image_url: "", classification: "Common", price: "0", stock: "0" };
 
-type QrRow = QrCode & {
+type ProductUnitRow = ProductUnit & {
   techbits_characters?: {
     name: string;
     classification: Classification;
-    total_quantity?: number;
-    claimed_quantity?: number;
+  } | null;
+  profiles?: {
+    email: string;
+    full_name: string | null;
   } | null;
 };
 
@@ -48,9 +52,7 @@ type QrClaimant = {
   } | null;
 };
 
-type CharacterQrRow = TechBitsCharacter & {
-  qrCode?: QrRow;
-};
+type CharacterQrRow = TechBitsCharacter;
 
 type AdminView = "characters" | "products" | "qr" | "users";
 
@@ -58,21 +60,17 @@ export default function AdminPage() {
   const router = useRouter();
   const [characters, setCharacters] = useState<TechBitsCharacter[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [qrCodes, setQrCodes] = useState<QrRow[]>([]);
+  const [productUnits, setProductUnits] = useState<ProductUnitRow[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [characterForm, setCharacterForm] = useState<FormState>(blankCharacter);
   const [productForm, setProductForm] = useState<FormState>(blankProduct);
-  const [activeClaimantQrId, setActiveClaimantQrId] = useState<string | null>(null);
-  const [claimantsByQr, setClaimantsByQr] = useState<Record<string, QrClaimant[]>>({});
-  const [loadingClaimantsQrId, setLoadingClaimantsQrId] = useState<string | null>(null);
-  const [message, setMessage] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; type: "character" | "product"; name: string } | null>(null);
+  const [actionModal, setActionModal] = useState<{ type: "loading" | "success" | "error"; message: string } | null>(null);
+  const [showQrModal, setShowQrModal] = useState<{ token: string; title: string; qrDataUrl: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeView, setActiveView] = useState<AdminView>("characters");
 
-  const charactersWithQrCodes: CharacterQrRow[] = characters.map((character) => ({
-    ...character,
-    qrCode: qrCodes.find((qr) => qr.character_id === character.id),
-  }));
+  const charactersWithQrCodes: CharacterQrRow[] = characters;
   const listedProduct = products[0] ?? null;
 
   async function loadInitialData() {
@@ -98,13 +96,13 @@ export default function AdminPage() {
     if (charactersResponse.ok) {
       setCharacters(charactersData.characters);
     }
-    if (qrResponse.ok) setQrCodes(qrData.qrCodes);
+    if (qrResponse.ok) setProductUnits(qrData.qrCodes);
     if (usersResponse.ok) setUsers(usersData.users);
   }
 
   async function saveCharacter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage("Saving character...");
+    setActionModal({ type: "loading", message: "Saving character..." });
     const image_url = await uploadFormImage(characterForm);
     if (image_url === null) return;
 
@@ -114,24 +112,33 @@ export default function AdminPage() {
       body: JSON.stringify({ ...characterForm, image_url, image_file: undefined, image_preview_url: undefined }),
     });
     const data = await response.json();
-    setMessage(response.ok ? "Character saved." : data.error ?? "Unable to save character.");
+    
     if (response.ok) {
+      setActionModal({ type: "success", message: "Character saved successfully." });
       setCharacterForm(blankCharacter);
       await refreshAll();
+    } else {
+      setActionModal({ type: "error", message: data.error ?? "Unable to save character." });
     }
   }
 
   async function deleteCharacter(id: string) {
-    setMessage("Deleting character...");
+    setActionModal({ type: "loading", message: "Deleting character..." });
     const response = await fetchWithAuth(`/api/admin/characters/${id}`, { method: "DELETE" });
     const data = await response.json();
-    setMessage(response.ok ? "Character deleted." : data.error ?? "Unable to delete character.");
-    if (response.ok) await refreshAll();
+    
+    if (response.ok) {
+      setActionModal({ type: "success", message: "Character deleted successfully." });
+      await refreshAll();
+    } else {
+      setActionModal({ type: "error", message: data.error ?? "Unable to delete character." });
+    }
+    setDeleteConfirm(null);
   }
 
   async function saveProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage("Saving product...");
+    setActionModal({ type: "loading", message: "Saving product..." });
     const image_url = await uploadFormImage(productForm);
     if (image_url === null) return;
 
@@ -142,57 +149,56 @@ export default function AdminPage() {
       body: JSON.stringify({ ...productForm, image_url, image_file: undefined, image_preview_url: undefined }),
     });
     const data = await response.json();
-    setMessage(response.ok ? "Product saved." : data.error ?? "Unable to save product.");
+    
     if (response.ok) {
+      setActionModal({ type: "success", message: "Product saved successfully." });
       setProductForm(blankProduct);
       await refreshAll();
+    } else {
+      setActionModal({ type: "error", message: data.error ?? "Unable to save product." });
     }
   }
 
   async function deleteProduct(id: string) {
-    setMessage("Deleting product...");
+    setActionModal({ type: "loading", message: "Deleting product..." });
     const response = await fetchWithAuth(`/api/products/${id}`, { method: "DELETE" });
     const data = await response.json();
-    setMessage(response.ok ? "Product deleted." : data.error ?? "Unable to delete product.");
-    if (response.ok) await refreshAll();
-  }
-
-  async function openClaimantsModal(qrId: string) {
-    setActiveClaimantQrId(qrId);
-
-    if (claimantsByQr[qrId]) return;
-
-    setLoadingClaimantsQrId(qrId);
-    const response = await fetchWithAuth(`/api/admin/qr-codes/${qrId}/claims`);
-    const data = await response.json();
-
-    if (!response.ok) {
-      setMessage(data.error ?? "Unable to load claimants.");
-      setLoadingClaimantsQrId(null);
-      return;
+    
+    if (response.ok) {
+      setActionModal({ type: "success", message: "Product deleted successfully." });
+      await refreshAll();
+    } else {
+      setActionModal({ type: "error", message: data.error ?? "Unable to delete product." });
     }
-
-    setClaimantsByQr((current) => ({
-      ...current,
-      [qrId]: data.claimants ?? [],
-    }));
-    setLoadingClaimantsQrId(null);
+    setDeleteConfirm(null);
   }
 
-  function closeClaimantsModal() {
-    setActiveClaimantQrId(null);
+  async function disableQr(id: string) {
+    setActionModal({ type: "loading", message: "Disabling unit..." });
+    const response = await fetchWithAuth(`/api/admin/qr-codes/${id}/disable`, { method: "POST" });
+    const data = await response.json();
+    if (response.ok) {
+      setProductUnits((prev) => prev.map((unit) => (unit.id === id ? { ...unit, status: "disabled" } : unit)));
+      setActionModal({ type: "success", message: "Product unit disabled successfully." });
+    } else {
+      setActionModal({ type: "error", message: data.error ?? "Unable to disable unit." });
+    }
   }
 
   async function updateUserRole(id: string, role: UserRole) {
-    setMessage("Updating user role...");
+    setActionModal({ type: "loading", message: "Updating user role..." });
     const response = await fetchWithAuth(`/api/admin/users/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ role }),
     });
     const data = await response.json();
 
-    setMessage(response.ok ? "User role updated." : data.error ?? "Unable to update user role.");
-    if (response.ok) await refreshAll();
+    if (response.ok) {
+      setActionModal({ type: "success", message: "User role updated successfully." });
+      await refreshAll();
+    } else {
+      setActionModal({ type: "error", message: data.error ?? "Unable to update user role." });
+    }
   }
 
   async function signOut() {
@@ -200,43 +206,115 @@ export default function AdminPage() {
     router.replace("/login");
   }
 
+  async function showQr(unit: ProductUnitRow) {
+    try {
+      const qrDataUrl = await QRCode.toDataURL(unit.qr_token, { width: 300, margin: 1 });
+      setShowQrModal({ token: unit.qr_token, title: `${unit.techbits_characters?.name ?? "Unknown"} - Unit ${unit.serial_number}`, qrDataUrl });
+    } catch (error) {
+      setActionModal({ type: "error", message: "Failed to generate QR code." });
+    }
+  }
+
+  async function saveAllQrCodesAsPdf() {
+    if (productUnits.length === 0) {
+      setActionModal({ type: "error", message: "No QR codes available to save." });
+      return;
+    }
+
+    setActionModal({ type: "loading", message: "Generating PDF..." });
+
+    try {
+      const doc = new jsPDF({ unit: "mm", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      
+      const grouped = productUnits.reduce((acc, unit) => {
+        const rarity = unit.techbits_characters?.classification ?? "Unknown";
+        if (!acc[rarity]) acc[rarity] = [];
+        acc[rarity].push(unit);
+        return acc;
+      }, {} as Record<string, ProductUnitRow[]>);
+
+      let isFirstPage = true;
+      for (const [rarity, units] of Object.entries(grouped)) {
+        if (!isFirstPage) {
+          doc.addPage();
+        }
+        isFirstPage = false;
+
+        doc.setFontSize(16);
+        doc.text(`Rarity: ${rarity}`, 10, 15);
+
+        let x = 10;
+        let y = 25;
+        const qrSize = 40;
+        const xStep = 45;
+        const yStep = 55;
+
+        for (const unit of units) {
+          if (y + yStep > pageHeight) {
+            doc.addPage();
+            y = 15;
+            x = 10;
+          }
+
+          const qrDataUrl = await QRCode.toDataURL(unit.qr_token, { width: 300, margin: 1 });
+          doc.addImage(qrDataUrl, "PNG", x, y, qrSize, qrSize);
+          
+          doc.setFontSize(8);
+          const title = unit.techbits_characters?.name ?? "Unknown";
+          doc.text(`${title} - ${unit.serial_number}`, x + (qrSize / 2), y + qrSize + 4, { align: "center" });
+
+          x += xStep;
+          if (x + xStep > pageWidth - qrSize) {
+            x = 10;
+            y += yStep;
+          }
+        }
+      }
+
+      doc.save("TechBits_QRCodes.pdf");
+      setActionModal({ type: "success", message: "PDF generated successfully." });
+    } catch (error) {
+      setActionModal({ type: "error", message: "Failed to generate PDF." });
+    }
+  }
+
   async function uploadFormImage(form: FormState) {
     if (!form.image_file) return form.image_url;
 
-    setMessage("Uploading image...");
-    const uploadBody = new FormData();
-    uploadBody.set("file", form.image_file);
+    setActionModal({ type: "loading", message: "Uploading image..." });
+    const formData = new FormData();
+    formData.append("file", form.image_file);
 
-    const response = await fetchWithAuth("/api/admin/uploads", {
-      method: "POST",
-      body: uploadBody,
-    });
-    const data = await response.json();
+    try {
+      const response = await fetchWithAuth("/api/admin/upload", {
+        method: "POST",
+        body: formData,
+      });
 
-    if (!response.ok) {
-      setMessage(data.error ?? "Unable to upload image.");
+      const data = await response.json();
+      if (!response.ok) {
+        setActionModal({ type: "error", message: data.error || "Upload failed" });
+        return null;
+      }
+      return data.url;
+    } catch (error: any) {
+      setActionModal({ type: "error", message: error.message || "Upload failed" });
       return null;
     }
-
-    return String(data.secure_url ?? "");
   }
 
   useEffect(() => {
-    // Initial admin hydration has to run after Supabase restores the browser session.
     loadInitialData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const activeQr = activeClaimantQrId
-    ? qrCodes.find((qr) => qr.id === activeClaimantQrId) ?? null
-    : null;
 
   if (loading) return <TechShell title="Admin Dashboard" subtitle="Loading admin controls..." />;
 
   return (
     <TechShell title="Admin Dashboard" subtitle="Manage TechBits products, character collectibles, QR batches, and claims.">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        {message && <p className="text-sm text-white/60">{message}</p>}
         <div className="flex flex-wrap gap-3 sm:ml-auto">
           <button onClick={refreshAll} className="flex h-10 items-center gap-2 px-4 text-xs uppercase tracking-widest text-white/55 hover:text-white">
             <RefreshCw className="h-4 w-4" /> Refresh
@@ -269,23 +347,13 @@ export default function AdminPage() {
 
           <div className="glass-panel min-w-0 overflow-hidden rounded-lg bg-[#0a0a0a]/80 p-4 sm:p-6">
             <h2 className="mb-5 text-xs uppercase tracking-[0.26em] text-white/70 sm:text-sm sm:tracking-[0.3em]">Created Characters</h2>
-            <div className="space-y-3">
+            <div className="grid gap-4">
               {charactersWithQrCodes.map((character) => (
                 <CharacterRegistryRow
                   key={character.id}
                   character={character}
-                  onEdit={() => setCharacterForm({
-                    id: character.id,
-                    name: character.name,
-                    description: character.description,
-                    image_url: character.image_url ?? "",
-                    image_file: null,
-                    image_preview_url: "",
-                    classification: character.classification,
-                    price: String(character.price ?? 0),
-                    quantity: String(character.total_quantity ?? 1),
-                  })}
-                  onDelete={() => deleteCharacter(character.id)}
+                  onEdit={() => setCharacterForm({ ...character, image_url: character.image_url ?? "", price: String(character.price ?? 0), quantity: String(character.total_quantity ?? 1) })}
+                  onDelete={() => setDeleteConfirm({ id: character.id, type: "character", name: character.name })}
                 />
               ))}
             </div>
@@ -295,84 +363,47 @@ export default function AdminPage() {
 
       {activeView === "products" && (
         <section className="grid min-w-0 gap-5 xl:grid-cols-[0.9fr_1.1fr] xl:gap-6">
-          <AdminForm title={productForm.id || listedProduct ? "Edit Product" : "Create Product"} onSubmit={saveProduct}>
+          <AdminForm title={productForm.id ? "Edit Product" : "Create Product"} onSubmit={saveProduct}>
             <Fields form={productForm} setForm={setProductForm} includeClassification={false} includeCommerce includeCharacterInventory={false} />
           </AdminForm>
 
           <div className="glass-panel min-w-0 overflow-hidden rounded-lg bg-[#0a0a0a]/80 p-4 sm:p-6">
             <h2 className="mb-5 text-xs uppercase tracking-[0.26em] text-white/70 sm:text-sm sm:tracking-[0.3em]">Product Listing</h2>
-            <div className="space-y-3">
-              {listedProduct && (
+            <div className="grid gap-4">
+              {products.map((product) => (
                 <RegistryRow
-                  title={`${listedProduct.name} - PHP ${Number(listedProduct.price).toFixed(2)}`}
-                  subtitle={`${listedProduct.description} Stock: ${listedProduct.stock}`}
-                  imageUrl={listedProduct.image_url}
-                  onEdit={() => setProductForm({
-                    ...listedProduct,
-                    details: listedProduct.details ?? "",
-                    image_url: listedProduct.image_url ?? "",
-                    image_file: null,
-                    image_preview_url: "",
-                    price: String(listedProduct.price),
-                    stock: String(listedProduct.stock),
-                  })}
-                  onDelete={() => deleteProduct(listedProduct.id)}
+                  key={product.id}
+                  title={product.name}
+                  subtitle={product.details || product.description}
+                  imageUrl={product.image_url}
+                  classification={product.classification}
+                  onEdit={() => setProductForm({ ...product, image_url: product.image_url ?? "", price: String(product.price ?? 0), stock: String(product.stock ?? 0), details: product.details ?? "" })}
+                  onDelete={() => setDeleteConfirm({ id: product.id, type: "product", name: product.name })}
                 />
-              )}
-              {!listedProduct && <p className="text-sm text-white/45">No product listing yet.</p>}
+              ))}
             </div>
           </div>
         </section>
       )}
 
       {activeView === "qr" && (
-        <section>
-          <div className="glass-panel min-w-0 overflow-hidden rounded-lg bg-[#0a0a0a]/80 p-4 sm:p-6">
-            <h2 className="mb-5 text-xs uppercase tracking-[0.26em] text-white/70 sm:text-sm sm:tracking-[0.3em]">QR Claims</h2>
-            <div className="space-y-3 md:hidden">
-              {qrCodes.map((qr) => (
-                <QrClaimCard
-                  key={qr.id}
-                  qr={qr}
-                  onViewClaimants={() => void openClaimantsModal(qr.id)}
-                />
-              ))}
-              {qrCodes.length === 0 && <p className="text-sm text-white/45">No QR claims yet.</p>}
-            </div>
-            <div className="hidden max-h-[520px] overflow-auto md:block">
-              <table className="w-full min-w-[920px] text-left text-xs text-white/55">
-                <thead className="uppercase tracking-[0.2em] text-white/35">
-                  <tr>
-                    <th className="pb-3">Character</th>
-                    <th className="pb-3">QR Value</th>
-                    <th className="pb-3">Status</th>
-                    <th className="pb-3">Claimed</th>
-                    <th className="pb-3">Remaining</th>
-                    <th className="pb-3">Claimants</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {qrCodes.map((qr) => (
-                    <tr key={qr.id} className="border-t border-white/10">
-                      <td className="py-3 text-white/75">{qr.techbits_characters?.name ?? "Unknown"}</td>
-                      <td className="py-3 font-mono">{qr.qr_value}</td>
-                      <td className="py-3">{formatQrStatus(qr.status)}</td>
-                      <td className="py-3">{qr.techbits_characters?.claimed_quantity ?? 0} / {qr.techbits_characters?.total_quantity ?? 0}</td>
-                      <td className="py-3">{Math.max((qr.techbits_characters?.total_quantity ?? 0) - (qr.techbits_characters?.claimed_quantity ?? 0), 0)}</td>
-                      <td className="py-3">
-                        <button
-                          type="button"
-                          onClick={() => void openClaimantsModal(qr.id)}
-                          className="h-8 rounded-sm border border-white/10 px-3 text-[10px] uppercase tracking-[0.16em] text-white/70 hover:border-white/20 hover:text-white"
-                        >
-                          View Users
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        <section className="glass-panel min-w-0 rounded-lg bg-[#0a0a0a]/80 p-4 sm:p-6">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xs uppercase tracking-[0.26em] text-white/70 sm:text-sm sm:tracking-[0.3em]">Per-Unit QR Codes</h2>
+            <button onClick={saveAllQrCodesAsPdf} className="flex h-9 items-center gap-2 rounded-sm bg-white px-4 text-[10px] uppercase tracking-widest text-black hover:bg-white/85">
+              <Download className="h-3 w-3" /> Save All QR Code
+            </button>
+          </div>
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {productUnits.map((unit) => (
+              <QrClaimCard
+                key={unit.id}
+                unit={unit}
+                onDisable={() => disableQr(unit.id)}
+                onShow={() => showQr(unit)}
+              />
+            ))}
+            {productUnits.length === 0 && <p className="text-sm text-white/45">No product units found.</p>}
           </div>
         </section>
       )}
@@ -384,7 +415,6 @@ export default function AdminPage() {
             {users.map((user) => (
               <UserRoleCard key={user.id} user={user} onChangeRole={updateUserRole} />
             ))}
-            {users.length === 0 && <p className="text-sm text-white/45">No users found.</p>}
           </div>
           <div className="hidden overflow-auto md:block">
             <table className="w-full min-w-[720px] text-left text-xs text-white/55">
@@ -420,12 +450,54 @@ export default function AdminPage() {
         </section>
       )}
 
-      <ClaimantsModal
-        qr={activeQr}
-        claimants={activeClaimantQrId ? claimantsByQr[activeClaimantQrId] ?? [] : []}
-        loading={loadingClaimantsQrId === activeClaimantQrId}
-        onClose={closeClaimantsModal}
-      />
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" onClick={() => setDeleteConfirm(null)}>
+          <div className="w-full max-w-sm rounded-lg border border-red-500/20 bg-[#080808] p-5 text-center shadow-[0_0_60px_rgba(239,68,68,0.1)]" onClick={(e) => e.stopPropagation()}>
+            <Trash2 className="mx-auto mb-4 h-10 w-10 text-red-400" />
+            <h3 className="text-lg font-light text-white/90">Delete {deleteConfirm.type === "character" ? "Character" : "Product"}</h3>
+            <p className="mt-2 text-sm text-white/50">Are you sure you want to delete <span className="text-white/80">{deleteConfirm.name}</span>? This action cannot be undone.</p>
+            <div className="mt-6 flex gap-3">
+              <button onClick={() => setDeleteConfirm(null)} className="flex-1 rounded-sm border border-white/10 bg-white/[0.03] px-4 py-2.5 text-xs uppercase tracking-[0.18em] text-white/70 hover:bg-white/10 hover:text-white">Cancel</button>
+              <button onClick={() => deleteConfirm.type === "character" ? deleteCharacter(deleteConfirm.id) : deleteProduct(deleteConfirm.id)} className="flex-1 rounded-sm bg-red-500/10 border border-red-500/20 px-4 py-2.5 text-xs uppercase tracking-[0.18em] text-red-400 hover:bg-red-500/20 hover:text-red-300">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showQrModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" onClick={() => setShowQrModal(null)}>
+          <div className="relative w-full max-w-sm rounded-lg border border-white/10 bg-[#080808] p-6 text-center shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setShowQrModal(null)} className="absolute right-4 top-4 text-white/50 hover:text-white">
+              <X className="h-5 w-5" />
+            </button>
+            <h3 className="mb-4 text-lg font-light text-white/90">{showQrModal.title}</h3>
+            <div className="mx-auto aspect-square w-48 overflow-hidden rounded-md bg-white p-2">
+              <Image src={showQrModal.qrDataUrl} alt="QR Code" width={300} height={300} className="h-full w-full object-contain" />
+            </div>
+            <p className="mt-4 break-all font-mono text-xs text-white/50">{showQrModal.token}</p>
+          </div>
+        </div>
+      )}
+
+      {actionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-lg border border-white/10 bg-[#080808] p-6 text-center shadow-xl">
+            {actionModal.type === "loading" && <RefreshCw className="mx-auto mb-4 h-8 w-8 animate-spin text-white/40" />}
+            {actionModal.type === "success" && <Sparkles className="mx-auto mb-4 h-8 w-8 text-emerald-400" />}
+            {actionModal.type === "error" && <Trash2 className="mx-auto mb-4 h-8 w-8 text-red-400" />}
+            <h3 className="text-lg font-light text-white/90">
+              {actionModal.type === "loading" ? "Processing" : actionModal.type === "success" ? "Success" : "Error"}
+            </h3>
+            <p className="mt-2 text-sm text-white/50">{actionModal.message}</p>
+            {actionModal.type !== "loading" && (
+              <button onClick={() => setActionModal(null)} className="mt-6 w-full rounded-sm border border-white/10 bg-white/[0.03] px-4 py-2.5 text-xs uppercase tracking-[0.18em] text-white/70 hover:bg-white/10 hover:text-white">
+                Dismiss
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
     </TechShell>
   );
 }
@@ -450,11 +522,13 @@ function AdminForm({ title, onSubmit, children }: { title: string; onSubmit: (ev
     <form onSubmit={onSubmit} className="glass-panel min-w-0 overflow-hidden rounded-lg bg-[#0a0a0a]/80 p-4 sm:p-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xs uppercase tracking-[0.26em] text-white/70 sm:text-sm sm:tracking-[0.3em]">{title}</h2>
-        <button className="flex h-10 items-center gap-2 bg-white/10 px-4 text-xs uppercase tracking-[0.18em] hover:bg-white/15">
+      </div>
+      {children}
+      <div className="mt-6 border-t border-white/10 pt-5 text-right">
+        <button type="submit" className="flex h-11 w-full sm:inline-flex items-center justify-center gap-2 bg-white px-8 text-xs uppercase tracking-[0.18em] text-black hover:bg-white/85">
           <Save className="h-4 w-4" /> Save
         </button>
       </div>
-      {children}
     </form>
   );
 }
@@ -585,7 +659,6 @@ function CharacterRegistryRow({ character, onEdit, onDelete }: { character: Char
   const claimedQuantity = character.claimed_quantity ?? 0;
   const totalQuantity = character.total_quantity ?? 0;
   const remainingQuantity = Math.max(totalQuantity - claimedQuantity, 0);
-  const qrStatus = character.qrCode?.status === "disabled" ? "disabled" : remainingQuantity <= 0 ? "sold_out" : character.qrCode?.status ?? "active";
 
   return (
     <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
@@ -595,35 +668,31 @@ function CharacterRegistryRow({ character, onEdit, onDelete }: { character: Char
         </div>
         <div className="min-w-0">
           <ClassificationBadge value={character.classification} />
-          <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
+          <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
             <div>
-              <dt className="uppercase tracking-[0.2em] text-white/30">Rarity</dt>
+              <dt className="text-[10px] uppercase tracking-[0.15em] text-white/30">Rarity</dt>
               <dd className="mt-1 text-white/75">{character.classification}</dd>
             </div>
-            <div>
-              <dt className="uppercase tracking-[0.2em] text-white/30">Name</dt>
+            <div className="min-w-0">
+              <dt className="text-[10px] uppercase tracking-[0.15em] text-white/30">Name</dt>
               <dd className="mt-1 truncate text-white/85">{character.name}</dd>
             </div>
-            <div>
-              <dt className="uppercase tracking-[0.2em] text-white/30">QR Status</dt>
-              <dd className="mt-1 text-white/65">{formatQrStatus(qrStatus)}</dd>
-            </div>
           </dl>
-          <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-4">
+          <dl className="mt-4 grid gap-3 text-xs grid-cols-2 xl:grid-cols-4">
             <div>
-              <dt className="uppercase tracking-[0.2em] text-white/30">Total Quantity</dt>
+              <dt className="text-[10px] uppercase tracking-[0.15em] text-white/30">Total Qty</dt>
               <dd className="mt-1 text-white/75">{totalQuantity}</dd>
             </div>
             <div>
-              <dt className="uppercase tracking-[0.2em] text-white/30">Claimed Quantity</dt>
+              <dt className="text-[10px] uppercase tracking-[0.15em] text-white/30">Claimed</dt>
               <dd className="mt-1 text-white/75">{claimedQuantity}</dd>
             </div>
             <div>
-              <dt className="uppercase tracking-[0.2em] text-white/30">Remaining Quantity</dt>
+              <dt className="text-[10px] uppercase tracking-[0.15em] text-white/30">Remaining</dt>
               <dd className="mt-1 text-white/75">{remainingQuantity}</dd>
             </div>
             <div>
-              <dt className="uppercase tracking-[0.2em] text-white/30">Price</dt>
+              <dt className="text-[10px] uppercase tracking-[0.15em] text-white/30">Price</dt>
               <dd className="mt-1 text-white/75">PHP {Number(character.price ?? 0).toFixed(2)}</dd>
             </div>
           </dl>
@@ -633,15 +702,6 @@ function CharacterRegistryRow({ character, onEdit, onDelete }: { character: Char
           <button onClick={onEdit} className="p-2 text-white/45 hover:text-white" type="button"><Save className="h-4 w-4" /></button>
           <button onClick={onDelete} className="p-2 text-white/45 hover:text-red-200" type="button"><Trash2 className="h-4 w-4" /></button>
         </div>
-      </div>
-      <div className="mt-4">
-        {character.qrCode ? (
-          <QrPreview qr={character.qrCode} characterName={character.name} />
-        ) : (
-          <div className="rounded-md border border-white/10 bg-black/30 p-3 text-xs uppercase tracking-[0.2em] text-white/35">
-            Pending QR generation
-          </div>
-        )}
       </div>
     </div>
   );
@@ -654,101 +714,58 @@ function formatQrStatus(status: string) {
 }
 
 function QrClaimCard({
-  qr,
-  onViewClaimants,
+  unit,
+  onDisable,
+  onShow,
 }: {
-  qr: QrRow;
-  onViewClaimants: () => void;
+  unit: ProductUnitRow;
+  onDisable: (id: string) => void;
+  onShow: () => void;
 }) {
-  const total = qr.techbits_characters?.total_quantity ?? 0;
-  const claimed = qr.techbits_characters?.claimed_quantity ?? 0;
-  const remaining = Math.max(total - claimed, 0);
-
   return (
     <article className="rounded-md border border-white/10 bg-white/[0.03] p-4 text-xs text-white/55">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm text-white/80">{qr.techbits_characters?.name ?? "Unknown"}</p>
-          <p className="mt-2 break-all font-mono text-[11px] leading-5 text-white/45">{qr.qr_value}</p>
+          <p className="text-sm text-white/80">{unit.techbits_characters?.name ?? "Unknown"} - Unit {unit.serial_number}</p>
+          <p className="mt-2 break-all font-mono text-[11px] leading-5 text-white/45">{unit.qr_token}</p>
         </div>
-        <span className="shrink-0 rounded-sm border border-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-white/50">
-          {formatQrStatus(qr.status)}
-        </span>
+        <div className="flex flex-col items-end gap-2">
+          <span className="shrink-0 rounded-sm border border-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-white/50">
+            {unit.status}
+          </span>
+          <div className="flex flex-col items-end gap-1 mt-1">
+            <button
+              onClick={onShow}
+              className="text-[10px] uppercase tracking-[0.18em] text-white/70 hover:text-white"
+            >
+              Show
+            </button>
+            {unit.status !== "disabled" && (
+              <button
+                onClick={() => onDisable(unit.id)}
+                className="text-[10px] uppercase tracking-[0.18em] text-red-300/70 hover:text-red-300"
+              >
+                Disable
+              </button>
+            )}
+          </div>
+        </div>
       </div>
       <dl className="mt-4 grid grid-cols-2 gap-3">
         <div>
-          <dt className="uppercase tracking-[0.18em] text-white/30">Claimed</dt>
-          <dd className="mt-1 text-white/75">{claimed} / {total}</dd>
+          <dt className="uppercase tracking-[0.18em] text-white/30">Claimed By</dt>
+          <dd className="mt-1 text-white/75">{unit.profiles?.full_name || unit.profiles?.email || "Unclaimed"}</dd>
         </div>
         <div>
-          <dt className="uppercase tracking-[0.18em] text-white/30">Remaining</dt>
-          <dd className="mt-1 text-white/75">{remaining}</dd>
+          <dt className="uppercase tracking-[0.18em] text-white/30">Claim Date</dt>
+          <dd className="mt-1 text-white/75">{unit.claimed_at ? new Date(unit.claimed_at).toLocaleDateString() : "N/A"}</dd>
         </div>
       </dl>
-      <button
-        type="button"
-        onClick={onViewClaimants}
-        className="mt-4 h-9 rounded-sm border border-white/10 px-3 text-[10px] uppercase tracking-[0.16em] text-white/70 hover:border-white/20 hover:text-white"
-      >
-        View Users
-      </button>
     </article>
   );
 }
 
-function ClaimantsModal({
-  qr,
-  claimants,
-  loading,
-  onClose,
-}: {
-  qr: QrRow | null;
-  claimants: QrClaimant[];
-  loading: boolean;
-  onClose: () => void;
-}) {
-  if (!qr) return null;
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
-      <div className="w-full max-w-2xl rounded-lg border border-white/15 bg-[#080808] p-5 sm:p-6" onClick={(event) => event.stopPropagation()}>
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.2em] text-white/40">QR Claimants</p>
-            <h3 className="mt-2 truncate text-lg font-light text-white/90">{qr.techbits_characters?.name ?? "Unknown Character"}</h3>
-            <p className="mt-1 truncate font-mono text-[11px] text-white/45">{qr.qr_value}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-9 rounded-sm border border-white/10 px-3 text-[10px] uppercase tracking-[0.16em] text-white/70 hover:border-white/20 hover:text-white"
-          >
-            Close
-          </button>
-        </div>
-
-        <div className="mt-5 max-h-[420px] space-y-2 overflow-auto pr-1">
-          {loading && <p className="text-sm text-white/45">Loading claimants...</p>}
-          {!loading && claimants.length === 0 && <p className="text-sm text-white/45">No users have claimed this QR yet.</p>}
-          {!loading && claimants.map((claimant) => (
-            <div key={claimant.id} className="flex items-center justify-between gap-3 rounded-sm border border-white/10 bg-black/30 px-3 py-2 text-[11px]">
-              <div className="min-w-0">
-                <p className="truncate text-white/85">{claimant.profiles?.full_name || "No name"}</p>
-                <p className="truncate text-white/45">{claimant.profiles?.email || "No email"}</p>
-              </div>
-              <p className="shrink-0 text-white/55">{new Date(claimant.claimed_at).toLocaleString()}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function UserRoleCard({ user, onChangeRole }: { user: Profile; onChangeRole: (id: string, role: UserRole) => void }) {
   return (
@@ -775,26 +792,5 @@ function UserRoleCard({ user, onChangeRole }: { user: Profile; onChangeRole: (id
         </div>
       </div>
     </article>
-  );
-}
-
-function QrPreview({ qr, characterName }: { qr: QrRow; characterName: string }) {
-  const src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&format=png&data=${encodeURIComponent(qr.qr_value)}`;
-  const fileName = `${characterName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "techbit"}-${qr.qr_value}.png`;
-
-  return (
-    <div className="flex gap-3 rounded-md border border-white/10 bg-black/30 p-3">
-      <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-sm bg-white p-2">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt={`${characterName} QR code`} className="h-full w-full object-contain" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-mono text-[11px] text-white/65">{qr.qr_value}</p>
-        <p className="mt-2 text-[11px] uppercase tracking-[0.18em] text-white/35">{qr.status}</p>
-        <a href={src} download={fileName} target="_blank" rel="noreferrer" className="mt-3 inline-flex h-8 items-center gap-2 bg-white/10 px-3 text-[10px] uppercase tracking-[0.16em] text-white/70 hover:bg-white/15 hover:text-white">
-          <Download className="h-3.5 w-3.5" /> Download
-        </a>
-      </div>
-    </div>
   );
 }

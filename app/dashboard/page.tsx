@@ -13,12 +13,15 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 import type { Classification, CollectionItem, TechBitsCharacter } from "@/lib/supabase/types";
 
 type ClaimResult = {
-  collection_id: string;
+  id: string;
+  user_id: string;
   character_id: string;
-  character_name: string;
-  classification: Classification;
+  product_unit_id: string;
   claimed_at: string;
   character: Pick<TechBitsCharacter, "id" | "name" | "description" | "image_url" | "classification">;
+  product_units: {
+    serial_number: string;
+  };
 };
 
 type ClaimModalState =
@@ -94,7 +97,7 @@ export default function DashboardPage() {
     }
 
     await stopCamera();
-    setStatus(`Claimed ${data.claim?.character_name ?? "TechBit"} successfully.`);
+    setStatus(`Claimed ${data.claim?.character?.name ?? "TechBit"} successfully.`);
     setModal({ type: "success", claim: data.claim });
     setManualCode("");
     await loadCollection();
@@ -277,6 +280,9 @@ export default function DashboardPage() {
                   <div>
                     <p className="text-[10px] uppercase tracking-[0.2em] text-white/30">Claimed</p>
                     <p className="mt-1 text-xs text-white/55">{new Date(item.claimed_at).toLocaleDateString()}</p>
+                    {item.product_units?.serial_number && (
+                      <p className="mt-1 font-mono text-[10px] text-white/40">Unit {item.product_units.serial_number}</p>
+                    )}
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-white/30">Value</p>
@@ -356,7 +362,8 @@ function ClaimModal({
                   <ClassificationBadge value={modal.claim.character.classification} />
                   <h3 className="mt-4 text-2xl font-light text-white">Congratulations!</h3>
                   <p className="mt-2 text-sm leading-6 text-white/60">
-                    You claimed {modal.claim.character.name}!
+                    You claimed {modal.claim.character.name}!<br/>
+                    <span className="font-mono text-xs opacity-75">Unit {modal.claim.product_units.serial_number}</span>
                   </p>
                   <p className="mt-3 text-[11px] uppercase tracking-[0.18em] text-white/35">
                     Claimed {new Date(modal.claim.claimed_at).toLocaleString()}

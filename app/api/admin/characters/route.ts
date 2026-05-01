@@ -42,14 +42,22 @@ export async function POST(request: NextRequest) {
 
     if (error) return jsonError(error.message, 400);
 
-    const { data: qrCode, error: qrError } = await supabase
-      .from("qr_codes")
-      .select("*")
-      .eq("character_id", data.id)
-      .single();
+    // Generate product_units
+    const units = Array.from({ length: quantity }, (_, i) => ({
+      product_id: data.id,
+      serial_number: `${String(i + 1).padStart(3, '0')}/${quantity}`,
+      qr_token: `TECHBITS-${data.id.substring(0, 8)}-${crypto.randomUUID()}`,
+      status: 'unclaimed'
+    }));
 
-    if (qrError) return jsonError(qrError.message, 400);
-    return Response.json({ character: data, qrCode }, { status: 201 });
+    const { data: generatedUnits, error: unitsError } = await supabase
+      .from("product_units")
+      .insert(units)
+      .select("*");
+
+    if (unitsError) return jsonError(unitsError.message, 400);
+
+    return Response.json({ character: data, units: generatedUnits }, { status: 201 });
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "Unauthorized", statusFromAuthError(error));
   }

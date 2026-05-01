@@ -9,8 +9,8 @@ export async function GET(request: NextRequest) {
     await verifyAdmin(request);
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
-      .from("qr_codes")
-      .select("*, techbits_characters(name, classification, total_quantity, claimed_quantity)")
+      .from("product_units")
+      .select("*, techbits_characters(name, classification), profiles(email, full_name)")
       .order("created_at", { ascending: false });
 
     if (error) return jsonError(error.message, 500);
@@ -25,29 +25,36 @@ export async function POST(request: NextRequest) {
     await verifyAdmin(request);
     const body = await request.json();
     const characterId = String(body.character_id ?? "");
+    const quantity = Math.min(Math.max(Number(body.quantity ?? 1), 1), 500);
 
     const supabase = getSupabaseAdmin();
-    const { data: existingQr, error: existingError } = await supabase
-      .from("qr_codes")
-      .select("*")
-      .eq("character_id", characterId)
-      .maybeSingle();
+    
+    // Get current max serial to continue counting (optional, but good)
+    const { count } = await supabase
+      .from("product_units")
+      .select("*", { count: 'exact', head: true })
+      .eq("product_id", characterId);
 
-    if (existingError) return jsonError(existingError.message, 400);
-    if (existingQr) return Response.json({ qrCode: existingQr }, { status: 200 });
+    const startIndex = count || 0;
+
+    const units = Array.from({ length: quantity }, (_, i) => ({
+      product_id: characterId,
+      serial_number: `#${String(startIndex + i + 1).padStart(3, '0')}`,
+      qr_token: `TECHBITS-${characterId.substring(0, 8)}-${randomUUID()}`,
+      status: "unclaimed"
+    }));
 
     const { data, error } = await supabase
-      .from("qr_codes")
-      .insert({
-        character_id: characterId,
-        qr_value: `TECHBITS-${randomUUID()}`,
-        status: "active",
-      })
-      .select("*")
-      .single();
+      .from("product_units")
+      .insert(units)
+      .select("*");
 
     if (error) return jsonError(error.message, 400);
-    return Response.json({ qrCode: data }, { status: 201 });
+
+    // Update total_quantity on character
+    await supabase.rpc('increment_character_quantity', { p_character_id: characterId, p_amount: quantity });
+
+    return Response.json({ qrCodes: data }, { status: 201 });
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "Unauthorized", statusFromAuthError(error));
   }

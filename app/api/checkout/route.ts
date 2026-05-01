@@ -169,6 +169,7 @@ export async function POST(request: NextRequest) {
         },
         itemCount: orderItems.length,
         checkoutUrl: paymongoData.checkoutUrl,
+        qrImageUrl: paymongoData.qrImageUrl,
         intentId: paymongoData.intentId,
       },
       { status: 201 }

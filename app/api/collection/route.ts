@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase
       .from("user_collections")
-      .select("*, techbits_characters(*)")
+      .select("*, techbits_characters(*), product_units(serial_number)")
       .eq("user_id", user.id)
       .order("claimed_at", { ascending: false });
 

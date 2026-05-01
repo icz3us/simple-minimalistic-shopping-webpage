@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
       .from("orders")
       .select("*")
       .eq("user_id", user.id)
+      .in("payment_status", ["Paid", "Refunded"])
       .order("created_at", { ascending: false });
 
     if (error) return jsonError(error.message, 500);

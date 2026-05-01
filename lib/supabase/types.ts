@@ -1,6 +1,6 @@
 export type UserRole = "user" | "admin";
 export type Classification = "Common" | "Uncommon" | "Rare" | "Legendary";
-export type QrStatus = "active" | "sold_out" | "disabled";
+export type UnitStatus = "unclaimed" | "claimed" | "disabled";
 export type ClaimScanStatus = "success" | "rejected" | "sold_out";
 export type PaymentStatus = "Pending" | "Paid" | "Failed" | "Refunded" | "Expired";
 export type OrderStatus = "Pending" | "Processing" | "Completed" | "Cancelled";
@@ -39,19 +39,24 @@ export type Profile = {
   created_at: string;
 };
 
-export type QrCode = {
+export type ProductUnit = {
   id: string;
-  character_id: string;
-  qr_value: string;
-  status: QrStatus;
+  product_id: string;
+  serial_number: string;
+  qr_token: string;
+  qr_image_url: string | null;
+  status: UnitStatus;
+  claimed_by: string | null;
+  claimed_at: string | null;
   created_at: string;
+  updated_at: string;
 };
 
 export type ClaimScan = {
   id: string;
   user_id: string | null;
   character_id: string | null;
-  qr_code_id: string | null;
+  product_unit_id: string | null;
   qr_value: string;
   status: ClaimScanStatus;
   reason: string | null;
@@ -62,7 +67,8 @@ export type CollectionItem = {
   id: string;
   user_id: string;
   character_id: string;
-  qr_code_id: string;
+  product_unit_id: string;
+  product_units?: ProductUnit | null;
   claimed_at: string;
   techbits_characters: TechBitsCharacter | null;
 };

@@ -3,20 +3,25 @@ import { jsonError, statusFromAuthError } from "@/lib/api";
 import { verifyAdmin } from "@/lib/auth/server";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export async function GET(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     await verifyAdmin(request);
-
+    const { id } = await params;
     const supabase = getSupabaseAdmin();
-    const { data: orders, error } = await supabase
-      .from("orders")
-      .select("*, profiles!orders_user_id_fkey(email, full_name)")
-      .in("payment_status", ["Paid", "Refunded"])
-      .order("created_at", { ascending: false });
 
-    if (error) return jsonError(error.message, 500);
+    const { data, error } = await supabase
+      .from("product_units")
+      .update({ status: "disabled" })
+      .eq("id", id)
+      .select("*")
+      .single();
 
-    return Response.json({ orders: orders ?? [] });
+    if (error) return jsonError(error.message, 400);
+
+    return Response.json({ unit: data });
   } catch (error) {
     return jsonError(
       error instanceof Error ? error.message : "Unauthorized",
