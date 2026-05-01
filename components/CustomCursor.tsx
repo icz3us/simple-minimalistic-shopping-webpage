@@ -6,8 +6,13 @@ import { motion } from "framer-motion";
 export default function CustomCursor() {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isPointer, setIsPointer] = useState(false);
+  const [enabled] = useState(() => (
+    typeof window !== "undefined" && window.matchMedia("(hover: hover) and (pointer: fine)").matches
+  ));
 
   useEffect(() => {
+    if (!enabled) return;
+
     const handleMouseMove = (e: MouseEvent) => {
       setPosition({ x: e.clientX, y: e.clientY });
       
@@ -24,7 +29,9 @@ export default function CustomCursor() {
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
     };
-  }, []);
+  }, [enabled]);
+
+  if (!enabled) return null;
 
   return (
     <>
