@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import TechShell from "@/components/TechShell";
@@ -11,6 +12,7 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 import type { UserRole } from "@/lib/supabase/types";
 
 export default function CartPage() {
+  const router = useRouter();
   const [items, setItems] = useState<CartItem[]>(() => getCartItems());
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
@@ -109,8 +111,12 @@ export default function CartPage() {
             </div>
           </div>
 
-          <button disabled={!isLoggedIn || isAdmin || items.length === 0 || checkingAuth} className="mt-6 h-12 w-full bg-white/10 text-xs uppercase tracking-[0.22em] text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40">
-            Checkout
+          <button
+            disabled={!isLoggedIn || isAdmin || items.length === 0 || checkingAuth}
+            onClick={() => router.push("/cart/checkout")}
+            className="mt-6 h-12 w-full bg-white text-xs uppercase tracking-[0.22em] text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white disabled:opacity-40"
+          >
+            Proceed to Checkout
           </button>
 
           {!checkingAuth && !isLoggedIn && (

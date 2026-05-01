@@ -2,6 +2,8 @@ export type UserRole = "user" | "admin";
 export type Classification = "Common" | "Uncommon" | "Rare" | "Legendary";
 export type QrStatus = "active" | "sold_out" | "disabled";
 export type ClaimScanStatus = "success" | "rejected" | "sold_out";
+export type PaymentStatus = "Pending" | "Paid" | "Failed" | "Refunded" | "Expired";
+export type OrderStatus = "Pending" | "Processing" | "Completed" | "Cancelled";
 
 export type Product = {
   id: string;
@@ -71,3 +73,37 @@ export const classifications: Classification[] = [
   "Rare",
   "Legendary",
 ];
+
+export type Order = {
+  id: string;
+  user_id: string;
+  customer_name: string;
+  phone: string;
+  shipping_address: string;
+  shipping_city: string;
+  shipping_province: string;
+  shipping_zip: string;
+  total_amount: number;
+  payment_status: PaymentStatus;
+  order_status: OrderStatus;
+  paymongo_payment_intent_id?: string | null;
+  paymongo_source_id?: string | null;
+  paymongo_reference?: string | null;
+  paid_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  profiles?: Pick<Profile, "email" | "full_name"> | null;
+};
+
+export type OrderItem = {
+  id: string;
+  order_id: string;
+  product_id: string;
+  product_name: string;
+  product_image_url: string | null;
+  rarity: string;
+  price_each: number;
+  quantity: number;
+  subtotal: number;
+  created_at: string;
+};

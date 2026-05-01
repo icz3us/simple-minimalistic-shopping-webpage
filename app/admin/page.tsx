@@ -1,9 +1,10 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { Boxes, Download, LogOut, QrCodeIcon, RefreshCw, Save, Sparkles, Trash2, Users } from "lucide-react";
+import { Boxes, Download, LogOut, QrCodeIcon, RefreshCw, Save, ShoppingBag, Sparkles, Trash2, Users } from "lucide-react";
 import ClassificationBadge from "@/components/ClassificationBadge";
 import TechShell from "@/components/TechShell";
 import { fetchWithAuth } from "@/lib/auth/client";
@@ -246,11 +247,18 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <ViewButton active={activeView === "characters"} icon={<Sparkles className="h-4 w-4" />} label="Characters" onClick={() => setActiveView("characters")} />
         <ViewButton active={activeView === "products"} icon={<Boxes className="h-4 w-4" />} label="Products" onClick={() => setActiveView("products")} />
         <ViewButton active={activeView === "qr"} icon={<QrCodeIcon className="h-4 w-4" />} label="QR Codes" onClick={() => setActiveView("qr")} />
         <ViewButton active={activeView === "users"} icon={<Users className="h-4 w-4" />} label="Users" onClick={() => setActiveView("users")} />
+        <Link
+          href="/admin/orders"
+          className="flex min-h-12 items-center justify-center gap-2 border border-white/10 bg-white/[0.03] px-2 py-3 text-[10px] uppercase tracking-[0.16em] text-white/45 transition-colors hover:text-white sm:px-4 sm:text-xs sm:tracking-[0.2em]"
+        >
+          <ShoppingBag className="h-4 w-4" />
+          Orders
+        </Link>
       </div>
 
       {activeView === "characters" && (
