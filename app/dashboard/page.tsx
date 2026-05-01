@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, LogOut, ScanLine } from "lucide-react";
+import { Camera, ScanLine } from "lucide-react";
 import ClassificationBadge from "@/components/ClassificationBadge";
 import TechShell from "@/components/TechShell";
 import { fetchWithAuth } from "@/lib/auth/client";
@@ -41,6 +41,7 @@ export default function DashboardPage() {
   const [scanning, setScanning] = useState(false);
   const [validating, setValidating] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  const [cameraPermission, setCameraPermission] = useState<PermissionState | "unsupported" | "unknown">("unknown");
   const [modal, setModal] = useState<ClaimModalState | null>(null);
 
   async function loadInitialData() {
@@ -63,7 +64,7 @@ export default function DashboardPage() {
 
     await loadCollection();
     setLoading(false);
-    await requestCameraPermission();
+    await checkCameraPermission();
   }
 
   async function loadCollection() {
@@ -112,19 +113,29 @@ export default function DashboardPage() {
     if (manualCode.trim()) await claimQr(manualCode.trim());
   }
 
-  async function requestCameraPermission() {
+  async function checkCameraPermission() {
     if (!navigator.mediaDevices?.getUserMedia) {
       setStatus("Camera access is not supported in this browser. Enter the QR value manually.");
+      setCameraPermission("unsupported");
       return;
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
-      stream.getTracks().forEach((track) => track.stop());
-      setCameraReady(true);
-      setStatus("Camera permission granted. Press Start Camera to scan.");
+      const permission = await navigator.permissions?.query({ name: "camera" as PermissionName });
+      if (!permission) {
+        setStatus("Press Start Camera to allow camera access.");
+        return;
+      }
+
+      setCameraPermission(permission.state);
+      setCameraReady(permission.state === "granted");
+      setStatus(permission.state === "granted" ? "Camera ready. Press Start Camera to scan." : "Press Start Camera to allow camera access.");
+      permission.onchange = () => {
+        setCameraPermission(permission.state);
+        setCameraReady(permission.state === "granted");
+      };
     } catch {
-      setStatus("Camera permission was blocked. Allow camera access or paste the QR value manually.");
+      setStatus("Press Start Camera to allow camera access.");
     }
   }
 
@@ -137,7 +148,10 @@ export default function DashboardPage() {
 
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 240, height: 240 } },
+        {
+          fps: 10,
+          aspectRatio: 1,
+        },
         async (decodedText) => {
           if (isClaimingRef.current) return;
           await claimQr(decodedText);
@@ -147,10 +161,18 @@ export default function DashboardPage() {
 
       setScanning(true);
       setCameraReady(true);
+      setCameraPermission("granted");
       setStatus("Place the QR Code inside the frame.");
     } catch (error) {
       setScanning(false);
-      setStatus(error instanceof Error ? error.message : "Unable to start camera. Check browser permissions.");
+      const message = error instanceof Error ? error.message : "";
+      const blocked = message.toLowerCase().includes("permission") || message.toLowerCase().includes("denied") || message.toLowerCase().includes("notallowed");
+      if (blocked) {
+        setCameraPermission("denied");
+        setStatus("Camera permission was blocked. Allow camera access in the browser, then press Start Camera again.");
+      } else {
+        setStatus(message || "Unable to start camera. Check browser permissions.");
+      }
     }
   }
 
@@ -183,11 +205,6 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function signOut() {
-    await supabaseBrowser.auth.signOut();
-    router.replace("/login");
-  }
-
   const collectionValue = collection.reduce(
     (total, item) => total + Number(item.techbits_characters?.price ?? 0),
     0
@@ -203,24 +220,24 @@ export default function DashboardPage() {
         <section className="glass-panel rounded-lg bg-[#0a0a0a]/80 p-4 sm:p-6">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xs uppercase tracking-[0.26em] text-white/70 sm:text-sm sm:tracking-[0.3em]">Claim Pin</h2>
-            <button onClick={signOut} className="flex items-center gap-2 text-xs uppercase tracking-widest text-white/45 hover:text-white">
-              <LogOut className="h-4 w-4" /> Logout
-            </button>
           </div>
 
-          <div className="relative overflow-hidden rounded-md border border-white/10 bg-black/60">
-            <div id={scannerElementId} className="min-h-[320px] w-full overflow-hidden [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover" />
+          <div className="relative aspect-square max-h-[420px] min-h-[220px] w-full overflow-hidden rounded-md border border-white/10 bg-black/60 sm:min-h-[320px]">
+            <div
+              id={scannerElementId}
+              className="h-full w-full overflow-hidden [&_canvas]:!h-full [&_canvas]:!w-full [&_canvas]:!object-cover [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
+            />
             {!scanning && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white/45">
                 <Camera className="h-10 w-10" />
                 <span className="px-6 text-center text-xs uppercase tracking-[0.22em]">
-                  {cameraReady ? "Camera ready" : "Waiting for camera permission"}
+                  {cameraPermission === "denied" ? "Camera blocked" : cameraReady ? "Camera ready" : "Tap start to allow camera"}
                 </span>
               </div>
             )}
             {scanning && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className={`h-56 w-56 border ${validating ? "border-white/70" : "border-white/35"} shadow-[0_0_40px_rgba(255,255,255,0.12)]`} />
+                <div className={`aspect-square w-[min(70%,230px)] border ${validating ? "border-white/70" : "border-white/35"} shadow-[0_0_40px_rgba(255,255,255,0.12)]`} />
               </div>
             )}
           </div>
@@ -229,10 +246,10 @@ export default function DashboardPage() {
           </p>
 
           <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-            <button onClick={startCamera} disabled={scanning || validating} className="flex h-11 flex-1 items-center justify-center gap-2 bg-white/10 text-xs uppercase tracking-[0.18em] hover:bg-white/15 disabled:opacity-50">
+            <button onClick={startCamera} disabled={scanning || validating} className="flex h-11 flex-1 items-center justify-center gap-2 bg-white/10 text-[11px] uppercase tracking-[0.12em] hover:bg-white/15 disabled:opacity-50 sm:text-xs sm:tracking-[0.18em]">
               <ScanLine className="h-4 w-4" /> Start Camera
             </button>
-            <button onClick={() => void stopCamera()} className="h-11 px-5 text-xs uppercase tracking-[0.18em] text-white/50 hover:text-white">
+            <button onClick={() => void stopCamera()} className="h-11 px-5 text-[11px] uppercase tracking-[0.12em] text-white/50 hover:text-white sm:text-xs sm:tracking-[0.18em]">
               Stop
             </button>
           </div>
@@ -244,7 +261,7 @@ export default function DashboardPage() {
               placeholder="Paste QR value"
               className="w-full rounded-sm border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/40"
             />
-            <button disabled={validating} className="h-11 w-full bg-white/10 text-xs uppercase tracking-[0.18em] hover:bg-white/15 disabled:opacity-50">
+            <button disabled={validating} className="h-11 w-full bg-white/10 text-[11px] uppercase tracking-[0.12em] hover:bg-white/15 disabled:opacity-50 sm:text-xs sm:tracking-[0.18em]">
               {validating ? "Validating..." : "Validate QR"}
             </button>
           </form>

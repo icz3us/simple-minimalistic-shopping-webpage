@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, type Transition } from "framer-motion";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -19,8 +19,8 @@ export default function GlassModal({ isOpen, onClose, product }: GlassModalProps
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [cartMessage, setCartMessage] = useState("");
   const [userRole, setUserRole] = useState<UserRole | null>(null);
-  const backdropTransition = { duration: 0.18, ease: "easeOut" };
-  const panelTransition = {
+  const backdropTransition: Transition = { duration: 0.18, ease: "easeOut" };
+  const panelTransition: Transition = {
     type: "spring",
     damping: 26,
     stiffness: 360,

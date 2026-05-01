@@ -45,3 +45,22 @@ body {
     cursor: auto;
   }
 }
+
+#techbits-qr-scanner,
+#techbits-qr-scanner__scan_region {
+  height: 100%;
+  width: 100%;
+}
+
+#techbits-qr-scanner video,
+#techbits-qr-scanner canvas {
+  display: block;
+  height: 100% !important;
+  object-fit: cover;
+  width: 100% !important;
+}
+
+#techbits-qr-scanner__dashboard_section,
+#techbits-qr-scanner__scan_region > img {
+  display: none !important;
+}

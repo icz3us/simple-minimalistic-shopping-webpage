@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import TechShell from "@/components/TechShell";
@@ -11,6 +12,9 @@ export default function RegisterPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -18,6 +22,12 @@ export default function RegisterPage() {
     event.preventDefault();
     setLoading(true);
     setMessage("");
+
+    if (password !== confirmPassword) {
+      setMessage("Passwords do not match.");
+      setLoading(false);
+      return;
+    }
 
     const { data, error } = await supabaseBrowser.auth.signUp({
       email,
@@ -67,14 +77,45 @@ export default function RegisterPage() {
           </label>
           <label className="block text-xs uppercase tracking-[0.25em] text-white/45">
             Password
-            <input
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              type="password"
-              minLength={8}
-              required
-              className="mt-2 w-full rounded-sm border border-white/10 bg-black/40 px-4 py-3 text-sm normal-case tracking-normal text-white outline-none focus:border-white/40"
-            />
+            <div className="relative mt-2">
+              <input
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                type={showPassword ? "text" : "password"}
+                minLength={8}
+                required
+                className="w-full rounded-sm border border-white/10 bg-black/40 py-3 pl-4 pr-12 text-sm normal-case tracking-normal text-white outline-none focus:border-white/40"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((visible) => !visible)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-white/45 transition hover:text-white"
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </label>
+          <label className="block text-xs uppercase tracking-[0.25em] text-white/45">
+            Confirm Password
+            <div className="relative mt-2">
+              <input
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                type={showConfirmPassword ? "text" : "password"}
+                minLength={8}
+                required
+                className="w-full rounded-sm border border-white/10 bg-black/40 py-3 pl-4 pr-12 text-sm normal-case tracking-normal text-white outline-none focus:border-white/40"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((visible) => !visible)}
+                aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-white/45 transition hover:text-white"
+              >
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </label>
           {message && <p className="text-sm text-white/65">{message}</p>}
           <button
