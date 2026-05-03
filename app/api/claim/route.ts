@@ -46,6 +46,11 @@ export async function POST(request: NextRequest) {
       .select("*")
       .single();
 
+    if (collectionError) return jsonError(collectionError.message, 400);
+
+    const { error: claimedQuantityError } = await supabase.rpc("increment_character_claimed_quantity", { p_character_id: unit.product_id });
+    if (claimedQuantityError) return jsonError(claimedQuantityError.message, 500);
+
     // 4. Log claim scan
     await supabase.from("claim_scans").insert({
        user_id: user.id,

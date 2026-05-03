@@ -42,7 +42,9 @@ export type Profile = {
 export type ProductUnit = {
   id: string;
   product_id: string;
-  serial_number: string;
+  serial_number: number;
+  total_quantity: number;
+  display_number: string;
   qr_token: string;
   qr_image_url: string | null;
   status: UnitStatus;
@@ -104,7 +106,7 @@ export type Order = {
 export type OrderItem = {
   id: string;
   order_id: string;
-  product_id: string;
+  product_id: string | null;
   product_name: string;
   product_image_url: string | null;
   rarity: string;

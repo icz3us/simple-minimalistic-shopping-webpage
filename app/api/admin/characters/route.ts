@@ -42,12 +42,14 @@ export async function POST(request: NextRequest) {
 
     if (error) return jsonError(error.message, 400);
 
-    // Generate product_units
+    // Generate one collectible QR unit for every numbered physical item.
     const units = Array.from({ length: quantity }, (_, i) => ({
       product_id: data.id,
-      serial_number: `${String(i + 1).padStart(3, '0')}/${quantity}`,
+      serial_number: i + 1,
+      total_quantity: quantity,
+      display_number: `#${i + 1}/${quantity}`,
       qr_token: `TECHBITS-${data.id.substring(0, 8)}-${crypto.randomUUID()}`,
-      status: 'unclaimed'
+      status: "unclaimed",
     }));
 
     const { data: generatedUnits, error: unitsError } = await supabase

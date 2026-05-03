@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { Boxes, Download, LogOut, QrCodeIcon, RefreshCw, Save, ShoppingBag, Sparkles, Trash2, Users, X } from "lucide-react";
+import { Boxes, Download, LogOut, QrCodeIcon, RefreshCw, Save, Search, ShoppingBag, Sparkles, Trash2, Users, X } from "lucide-react";
 import ClassificationBadge from "@/components/ClassificationBadge";
 import jsPDF from "jspdf";
 import QRCode from "qrcode";
@@ -42,16 +42,6 @@ type ProductUnitRow = ProductUnit & {
   } | null;
 };
 
-type QrClaimant = {
-  id: string;
-  user_id: string;
-  claimed_at: string;
-  profiles: {
-    email: string;
-    full_name: string | null;
-  } | null;
-};
-
 type CharacterQrRow = TechBitsCharacter;
 
 type AdminView = "characters" | "products" | "qr" | "users";
@@ -69,9 +59,23 @@ export default function AdminPage() {
   const [showQrModal, setShowQrModal] = useState<{ token: string; title: string; qrDataUrl: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeView, setActiveView] = useState<AdminView>("characters");
+  const [qrSearch, setQrSearch] = useState("");
 
   const charactersWithQrCodes: CharacterQrRow[] = characters;
-  const listedProduct = products[0] ?? null;
+  const normalizedQrSearch = qrSearch.trim().toLowerCase();
+  const visibleProductUnits = normalizedQrSearch
+    ? productUnits.filter((unit) => {
+        const characterName = unit.techbits_characters?.name ?? "";
+        return [
+          characterName,
+          unit.techbits_characters?.classification ?? "",
+          unit.display_number,
+          String(unit.serial_number),
+          unit.status,
+          unit.qr_token,
+        ].some((value) => value.toLowerCase().includes(normalizedQrSearch));
+      })
+    : productUnits;
 
   async function loadInitialData() {
     await refreshAll();
@@ -142,7 +146,7 @@ export default function AdminPage() {
     const image_url = await uploadFormImage(productForm);
     if (image_url === null) return;
 
-    const productId = productForm.id || listedProduct?.id;
+    const productId = productForm.id;
     const path = productId ? `/api/products/${productId}` : "/api/products";
     const response = await fetchWithAuth(path, {
       method: productId ? "PUT" : "POST",
@@ -209,8 +213,8 @@ export default function AdminPage() {
   async function showQr(unit: ProductUnitRow) {
     try {
       const qrDataUrl = await QRCode.toDataURL(unit.qr_token, { width: 300, margin: 1 });
-      setShowQrModal({ token: unit.qr_token, title: `${unit.techbits_characters?.name ?? "Unknown"} - Unit ${unit.serial_number}`, qrDataUrl });
-    } catch (error) {
+      setShowQrModal({ token: unit.qr_token, title: `${unit.techbits_characters?.name ?? "Unknown"} ${unit.display_number}`, qrDataUrl });
+    } catch {
       setActionModal({ type: "error", message: "Failed to generate QR code." });
     }
   }
@@ -263,7 +267,7 @@ export default function AdminPage() {
           
           doc.setFontSize(8);
           const title = unit.techbits_characters?.name ?? "Unknown";
-          doc.text(`${title} - ${unit.serial_number}`, x + (qrSize / 2), y + qrSize + 4, { align: "center" });
+          doc.text(`${title} ${unit.display_number}`, x + (qrSize / 2), y + qrSize + 4, { align: "center" });
 
           x += xStep;
           if (x + xStep > pageWidth - qrSize) {
@@ -275,7 +279,7 @@ export default function AdminPage() {
 
       doc.save("TechBits_QRCodes.pdf");
       setActionModal({ type: "success", message: "PDF generated successfully." });
-    } catch (error) {
+    } catch {
       setActionModal({ type: "error", message: "Failed to generate PDF." });
     }
   }
@@ -299,8 +303,9 @@ export default function AdminPage() {
         return null;
       }
       return data.url;
-    } catch (error: any) {
-      setActionModal({ type: "error", message: error.message || "Upload failed" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upload failed";
+      setActionModal({ type: "error", message });
       return null;
     }
   }
@@ -394,8 +399,17 @@ export default function AdminPage() {
               <Download className="h-3 w-3" /> Save All QR Code
             </button>
           </div>
+          <label className="mb-4 flex min-h-11 items-center gap-3 rounded-sm border border-white/10 bg-black/40 px-3 text-xs text-white/55">
+            <Search className="h-4 w-4 shrink-0 text-white/35" />
+            <input
+              value={qrSearch}
+              onChange={(event) => setQrSearch(event.target.value)}
+              placeholder="Search #1/10, character, status, or token"
+              className="h-11 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/25"
+            />
+          </label>
           <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {productUnits.map((unit) => (
+            {visibleProductUnits.map((unit) => (
               <QrClaimCard
                 key={unit.id}
                 unit={unit}
@@ -404,6 +418,7 @@ export default function AdminPage() {
               />
             ))}
             {productUnits.length === 0 && <p className="text-sm text-white/45">No product units found.</p>}
+            {productUnits.length > 0 && visibleProductUnits.length === 0 && <p className="text-sm text-white/45">No numbered units match that search.</p>}
           </div>
         </section>
       )}
@@ -709,6 +724,8 @@ function CharacterRegistryRow({ character, onEdit, onDelete }: { character: Char
 
 function formatQrStatus(status: string) {
   if (status === "sold_out") return "Sold Out";
+  if (status === "claimed") return "Claimed";
+  if (status === "unclaimed") return "Unclaimed";
   if (status === "disabled") return "Disabled";
   return "Active";
 }
@@ -726,12 +743,17 @@ function QrClaimCard({
     <article className="rounded-md border border-white/10 bg-white/[0.03] p-4 text-xs text-white/55">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm text-white/80">{unit.techbits_characters?.name ?? "Unknown"} - Unit {unit.serial_number}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm text-white/80">{unit.techbits_characters?.name ?? "Unknown"}</p>
+            <span className="rounded-sm border border-white/10 bg-white/[0.04] px-2 py-1 font-mono text-[10px] text-white/60">
+              {unit.display_number}
+            </span>
+          </div>
           <p className="mt-2 break-all font-mono text-[11px] leading-5 text-white/45">{unit.qr_token}</p>
         </div>
         <div className="flex flex-col items-end gap-2">
           <span className="shrink-0 rounded-sm border border-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-white/50">
-            {unit.status}
+            {formatQrStatus(unit.status)}
           </span>
           <div className="flex flex-col items-end gap-1 mt-1">
             <button
@@ -752,6 +774,14 @@ function QrClaimCard({
         </div>
       </div>
       <dl className="mt-4 grid grid-cols-2 gap-3">
+        <div>
+          <dt className="uppercase tracking-[0.18em] text-white/30">Number</dt>
+          <dd className="mt-1 font-mono text-white/75">{unit.display_number}</dd>
+        </div>
+        <div>
+          <dt className="uppercase tracking-[0.18em] text-white/30">Rarity</dt>
+          <dd className="mt-1 text-white/75">{unit.techbits_characters?.classification ?? "Unknown"}</dd>
+        </div>
         <div>
           <dt className="uppercase tracking-[0.18em] text-white/30">Claimed By</dt>
           <dd className="mt-1 text-white/75">{unit.profiles?.full_name || unit.profiles?.email || "Unclaimed"}</dd>

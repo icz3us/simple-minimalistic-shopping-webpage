@@ -51,7 +51,6 @@ export async function POST(request: NextRequest) {
     const supabase = getSupabaseAdmin();
 
     if (event === "payment.paid") {
-      const sourceId = paymentData.attributes.source?.id;
       // We can also find by intent ID, but webhook often doesn't bubble up intent easily unless it's in payment data.
       // Usually payment object has `source_id` if it came from a source. Wait, for payment intent, it's `paymentData.attributes.payment_intent_id`.
       const paymentIntentId = paymentData.attributes.payment_intent_id;
@@ -95,6 +94,8 @@ export async function POST(request: NextRequest) {
 
         if (items) {
           for (const item of items) {
+            if (!item.product_id) continue;
+
             const { error: stockError } = await supabase.rpc("decrement_stock", {
               p_product_id: item.product_id,
               p_quantity: item.quantity,

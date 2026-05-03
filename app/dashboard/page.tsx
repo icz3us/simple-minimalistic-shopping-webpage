@@ -10,7 +10,7 @@ import ClassificationBadge from "@/components/ClassificationBadge";
 import TechShell from "@/components/TechShell";
 import { fetchWithAuth } from "@/lib/auth/client";
 import { supabaseBrowser } from "@/lib/supabase/client";
-import type { Classification, CollectionItem, TechBitsCharacter } from "@/lib/supabase/types";
+import type { CollectionItem, TechBitsCharacter } from "@/lib/supabase/types";
 
 type ClaimResult = {
   id: string;
@@ -20,7 +20,9 @@ type ClaimResult = {
   claimed_at: string;
   character: Pick<TechBitsCharacter, "id" | "name" | "description" | "image_url" | "classification">;
   product_units: {
-    serial_number: string;
+    serial_number: number;
+    total_quantity: number;
+    display_number: string;
   };
 };
 
@@ -98,7 +100,8 @@ export default function DashboardPage() {
     }
 
     await stopCamera();
-    setStatus(`Claimed ${data.claim?.character?.name ?? "TechBit"} successfully.`);
+    const displayNumber = data.claim?.product_units?.display_number ?? "";
+    setStatus(`Claimed ${data.claim?.character?.name ?? "TechBit"} ${displayNumber} successfully.`);
     setModal({ type: "success", claim: data.claim });
     setManualCode("");
     await loadCollection();
@@ -290,16 +293,21 @@ export default function DashboardPage() {
                     <div className="flex h-full items-center justify-center text-xs uppercase tracking-[0.3em] text-white/20">T-BIT</div>
                   )}
                 </div>
-                {item.techbits_characters && <ClassificationBadge value={item.techbits_characters.classification} />}
+                <div className="flex flex-wrap items-center gap-2">
+                  {item.techbits_characters && <ClassificationBadge value={item.techbits_characters.classification} />}
+                  {item.product_units?.display_number && (
+                    <span className="rounded-sm border border-white/10 bg-white/[0.04] px-2 py-1 font-mono text-[10px] text-white/55">
+                      {item.product_units.display_number}
+                    </span>
+                  )}
+                </div>
                 <h3 className="mt-3 text-lg font-light text-white/90">{item.techbits_characters?.name}</h3>
                 <p className="mt-2 line-clamp-3 text-sm font-light leading-6 text-white/50">{item.techbits_characters?.description}</p>
                 <div className="mt-4 grid grid-cols-2 gap-3 border-t border-white/10 pt-4">
                   <div>
                     <p className="text-[10px] uppercase tracking-[0.2em] text-white/30">Claimed</p>
                     <p className="mt-1 text-xs text-white/55">{new Date(item.claimed_at).toLocaleDateString()}</p>
-                    {item.product_units?.serial_number && (
-                      <p className="mt-1 font-mono text-[10px] text-white/40">Unit {item.product_units.serial_number}</p>
-                    )}
+                    {item.product_units?.display_number && <p className="mt-1 font-mono text-[10px] text-white/40">{item.product_units.display_number}</p>}
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-white/30">Value</p>
@@ -379,8 +387,7 @@ function ClaimModal({
                   <ClassificationBadge value={modal.claim.character.classification} />
                   <h3 className="mt-4 text-2xl font-light text-white">Congratulations!</h3>
                   <p className="mt-2 text-sm leading-6 text-white/60">
-                    You claimed {modal.claim.character.name}!<br/>
-                    <span className="font-mono text-xs opacity-75">Unit {modal.claim.product_units.serial_number}</span>
+                    You claimed {modal.claim.character.name} {modal.claim.product_units.display_number}
                   </p>
                   <p className="mt-3 text-[11px] uppercase tracking-[0.18em] text-white/35">
                     Claimed {new Date(modal.claim.claimed_at).toLocaleString()}

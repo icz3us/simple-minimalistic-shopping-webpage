@@ -73,6 +73,8 @@ export async function GET(request: NextRequest, { params }: Params) {
 
         if (items) {
           for (const item of items) {
+            if (!item.product_id) continue;
+
             const { error: stockError } = await supabase.rpc("decrement_stock", {
               p_product_id: item.product_id,
               p_quantity: item.quantity,

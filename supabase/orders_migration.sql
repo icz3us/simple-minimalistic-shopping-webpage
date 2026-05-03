@@ -39,7 +39,7 @@ create table if not exists public.orders (
 create table if not exists public.order_items (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references public.orders(id) on delete cascade,
-  product_id uuid not null references public.products(id) on delete restrict,
+  product_id uuid references public.products(id) on delete set null,
   product_name text not null,
   product_image_url text,
   rarity text not null default 'Common',
@@ -55,6 +55,13 @@ create index if not exists idx_orders_created_at on public.orders(created_at des
 create index if not exists idx_orders_payment_status on public.orders(payment_status);
 create index if not exists idx_orders_order_status on public.orders(order_status);
 create index if not exists idx_order_items_order_id on public.order_items(order_id);
+create index if not exists idx_order_items_product_id on public.order_items(product_id);
+
+alter table public.order_items drop constraint if exists order_items_product_id_fkey;
+alter table public.order_items alter column product_id drop not null;
+alter table public.order_items
+  add constraint order_items_product_id_fkey
+  foreign key (product_id) references public.products(id) on delete set null;
 
 -- Auto-update updated_at trigger
 drop trigger if exists set_orders_updated_at on public.orders;
@@ -119,4 +126,3 @@ drop policy if exists "payments_admin_write" on public.payments;
 create policy "payments_admin_write" on public.payments
 for all using (public.is_admin(auth.uid()))
 with check (public.is_admin(auth.uid()));
-

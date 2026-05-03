@@ -8,8 +8,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("products")
     .select("*")
-    .order("created_at", { ascending: false })
-    .limit(1);
+    .order("created_at", { ascending: false });
 
   if (error) return jsonError(error.message, 500);
   return Response.json({ products: data ?? [] });
@@ -20,14 +19,6 @@ export async function POST(request: NextRequest) {
     await verifyAdmin(request);
     const body = await request.json();
     const supabase = getSupabaseAdmin();
-    const { count, error: countError } = await supabase
-      .from("products")
-      .select("id", { count: "exact", head: true });
-
-    if (countError) return jsonError(countError.message, 500);
-    if ((count ?? 0) >= 1) {
-      return jsonError("Only one product listing is allowed. Edit or delete the existing product first.", 409);
-    }
 
     const { data, error } = await supabase
       .from("products")

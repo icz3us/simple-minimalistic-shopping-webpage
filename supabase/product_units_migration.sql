@@ -16,20 +16,25 @@ drop function if exists public.create_character_qr_code();
 create table if not exists public.product_units (
   id uuid primary key default gen_random_uuid(),
   product_id uuid not null references public.techbits_characters(id) on delete cascade,
-  serial_number text not null,
+  serial_number integer not null check (serial_number > 0),
+  total_quantity integer not null,
+  display_number text not null,
   qr_token text not null unique,
   qr_image_url text,
   status public.unit_status not null default 'unclaimed',
   claimed_by uuid references public.profiles(id) on delete set null,
   claimed_at timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint product_units_total_quantity_valid check (total_quantity >= serial_number)
 );
 
 -- Indexes for fast lookups
 create index if not exists idx_product_units_product_id on public.product_units(product_id);
 create index if not exists idx_product_units_qr_token on public.product_units(qr_token);
 create index if not exists idx_product_units_status on public.product_units(status);
+create index if not exists idx_product_units_display_number on public.product_units(display_number);
+create unique index if not exists ux_product_units_product_serial on public.product_units(product_id, serial_number);
 
 -- Auto-update updated_at trigger
 drop trigger if exists set_product_units_updated_at on public.product_units;
@@ -57,6 +62,9 @@ alter table public.user_collections drop constraint if exists user_collections_q
 alter table public.user_collections drop constraint if exists user_collections_user_id_character_id_key;
 alter table public.user_collections drop column if exists qr_code_id;
 alter table public.user_collections add column if not exists product_unit_id uuid references public.product_units(id) on delete set null;
+create unique index if not exists ux_user_collections_product_unit_id
+  on public.user_collections(product_unit_id)
+  where product_unit_id is not null;
 
 -- claim_scans table updates
 alter table public.claim_scans drop constraint if exists claim_scans_qr_code_id_fkey;
@@ -76,6 +84,19 @@ as $$
 begin
   update public.techbits_characters
   set total_quantity = total_quantity + p_amount
+  where id = p_character_id;
+end;
+$$;
+
+-- RPC to increment claimed quantity when one serialized unit is claimed
+create or replace function public.increment_character_claimed_quantity(p_character_id uuid)
+returns void
+language plpgsql
+security definer
+as $$
+begin
+  update public.techbits_characters
+  set claimed_quantity = least(claimed_quantity + 1, total_quantity)
   where id = p_character_id;
 end;
 $$;
